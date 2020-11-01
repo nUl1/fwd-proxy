@@ -13,3 +13,6 @@ and there is next to none error handling.
 
 It works on my machine and I have no intention on developing
 it further. Pull requests and/or issues will not be watched.
+
+The proxy accepts only `fwd` user and an arbitrary password
+that can be used for upstream authentication.
