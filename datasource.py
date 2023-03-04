@@ -33,7 +33,9 @@ class DataSource:
         self.wd /= path
         return True
 
-    async def list(self):
+    async def list(self, path=''):
+        if path and path != TEST_DATA_PATH:
+            return {}
         return {
             TEST_DATA_PATH.name: DataSource.ListEntry(
                 mtime=TEST_DATA_MTIME,

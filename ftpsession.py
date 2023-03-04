@@ -98,6 +98,30 @@ class FtpSession:
         await sender.join()
         return True
 
+    def _format_mlst_entry(self, name, size, mtime):
+        return ''.join([
+            f'type={"file" if size is not None else "dir"};',
+            f'size={size};' if size is not None else '',
+            f'modify={mtime.strftime("%Y%m%d%H%M%S")};'
+            if mtime is not None
+            else '',
+            ' ',
+            name,
+        ])
+
+    async def _mlsd(self, conn, path):
+        entries = await self.datasource.list(path)
+        listing = '\r\n'.join(
+            self._format_mlst_entry(name, entry.size, entry.mtime)
+            for name, entry in entries.items()
+        )
+        listing += '\r\n'
+
+        sender = pipe.Pipe(conn)
+        await sender.finish(listing.encode())
+        await sender.join()
+        return True
+
     async def _retr(self, conn, path):
         sender = pipe.Pipe(conn)
         send_task = asyncio.create_task(sender.join())
@@ -160,6 +184,7 @@ class FtpSession:
                     '211-Features:',
                     ' EPSV',
                     ' MDTM',
+                    ' MLST type*;size*;modify*;',
                     ' REST STREAM',
                     ' SIZE',
                     ' TVFS',
@@ -222,6 +247,27 @@ class FtpSession:
                     await self._reply(f'213 {ret.strftime("%Y%m%d%H%M%S")}')
                 else:
                     await self._reply('550 Unknown')
+            elif cmd == 'mlst':
+                name = args or self.datasource.wd.name
+                if self.datasource.exists(args):
+                    size = self.datasource.size(args)
+                    mtime = self.datasource.mtime(args)
+                    await self._reply([
+                        '250- Begin',
+                        ' ' + self._format_mlst_entry(name, size, mtime),
+                        '250 End',
+                    ])
+                else:
+                    await self._reply('550 Unknown')
+            elif cmd == 'mlsd':
+                if not self.datasource.exists(args):
+                    await self._reply('550 Unknown')
+                elif self.datasource.size(args) is not None:
+                    await self._reply('501 Not a directory')
+                else:
+                    conn = await self.pasv_established
+                    self.transfer = asyncio.create_task(self._mlsd(conn, args))
+                    await self._reply('150 Listing')
             elif cmd == 'rest':
                 self.rest = int(args)
                 await self._reply('350 Duly noted')
